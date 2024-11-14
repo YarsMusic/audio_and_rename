@@ -5,6 +5,7 @@ import soundfile as sf
 import tkinter as tk
 from tkinter import filedialog, ttk, simpledialog, Toplevel, Radiobutton
 import re
+import pandas as pd
 
 # Функции для аудио обработки
 def add_padding(y, sr, pad_start=0.10, pad_end=0.20):
@@ -14,8 +15,6 @@ def add_padding(y, sr, pad_start=0.10, pad_end=0.20):
 
 def process_audio(file_path, output_sr, output_folder, progress_text, progress_bar):
     y, sr = librosa.load(file_path, sr=None)
-
-    # Удаляем обработку шума и тишины
     y_padded = add_padding(y, sr)  # Добавление паддинга без предварительной обрезки
 
     y_resampled = librosa.resample(y_padded, orig_sr=sr, target_sr=output_sr)
@@ -164,6 +163,73 @@ def audio_processing(progress_text, progress_bar):
 
     process_directory(input_directory, output_directory, progress_text, progress_bar)
 
+    
+def rename_by_csv(progress_text):
+    # Открываем диалог выбора CSV-файла
+    csv_file_path = filedialog.askopenfilename(title="Выберите CSV файл", filetypes=[("CSV files", "*.csv")])
+
+    # Проверяем, что CSV файл выбран
+    if not csv_file_path:
+        progress_text.insert(tk.END, "CSV файл не выбран.\n")
+    else:
+        # Открываем диалог выбора основной папки с подкаталогами 22k и 8k
+        folder_path = filedialog.askdirectory(title="Выберите основную папку, содержащую подкаталоги 22k и 8k")
+        
+        # Проверяем, что основная папка выбрана
+        if not folder_path:
+            progress_text.insert(tk.END, "Основная папка не выбрана.\n")
+        else:
+            # Путь к подкаталогам 22k и 8k
+            folder_22k = os.path.join(folder_path, "22k")
+            folder_8k = os.path.join(folder_path, "8k")
+
+            # Загрузка CSV файла без заголовка, пропускаем первую строку
+            try:
+                data = pd.read_csv(csv_file_path, header=0, usecols=[0], names=['new_name'])
+                progress_text.insert(tk.END, "CSV файл загружен успешно.\n")
+            except pd.errors.ParserError as e:
+                progress_text.insert(tk.END, "Ошибка при загрузке CSV.\n", e)
+                data = None
+
+            if data is not None:
+                # Убираем любые пустые строки и строки, которые могут быть ошибочно добавлены
+                data = data.dropna().reset_index(drop=True)
+                
+                # Проверка на совпадение данных
+                progress_text.insert(tk.END,f"Количество новых имен в CSV файле: {data.shape[0]}\n")
+                
+                # Получаем список всех .wav файлов в папках 22k и 8k
+                files_22k = [f for f in os.listdir(folder_22k) if f.lower().endswith('.wav')]
+                files_8k = [f for f in os.listdir(folder_8k) if f.lower().endswith('.wav')]
+
+                # Проверка количества файлов в папках
+                progress_text.insert(tk.END,f"Количество файлов в папке 22k: {len(files_22k)}\n")
+                progress_text.insert(tk.END,f"Количество файлов в папке 8k: {len(files_8k)}\n")
+
+                # Убедитесь, что количество файлов совпадает с количеством новых имен
+                if len(files_22k) != len(data) or len(files_8k) != len(data):
+                    progress_text.insert(tk.END,f"Количество файлов в папках 22k ({len(files_22k)}) и 8k ({len(files_8k)}) не совпадает с количеством новых имен в CSV файле ({len(data)}).\n")
+                    # Если количество не совпадает, удалим последнюю строку из CSV
+                    if len(data) > len(files_22k):
+                        data = data.head(len(files_22k))
+                        progress_text.insert(tk.END,f"Удалены лишние строки. Количество новых имен теперь: {len(data)}.\n")
+                else:
+                    # Переименование файлов в папке 22k
+                    for file_name, new_name in zip(files_22k, data['new_name']):
+                        old_path_22k = os.path.join(folder_22k, file_name)
+                        new_path_22k = os.path.join(folder_22k, str(new_name) + '.wav')
+                        os.rename(old_path_22k, new_path_22k)
+                        progress_text.insert(tk.END,f'File renamed in 22k from {file_name} to {new_name}.wav\n')
+
+                    # Переименование файлов в папке 8k
+                    for file_name, new_name in zip(files_8k, data['new_name']):
+                        old_path_8k = os.path.join(folder_8k, file_name)
+                        new_path_8k = os.path.join(folder_8k, str(new_name) + '.wav')
+                        os.rename(old_path_8k, new_path_8k)
+                        progress_text.insert(tk.END,f'File renamed in 8k from {file_name} to {new_name}.wav\n')
+
+                    progress_text.insert(tk.END,"Renaming process completed.\n")
+
 def main():
     root = tk.Tk()
     root.title("Audio Processor")
@@ -188,6 +254,9 @@ def main():
 
     rename_button = ttk.Button(frame, text="Rename", command=lambda: rename_files_with_suffix_choice(progress_text, progress_bar))
     rename_button.pack(pady=5, fill="x")
+
+    rename_by_csv_button = ttk.Button(frame, text="Rename by csv", command=lambda: rename_by_csv(progress_text))
+    rename_by_csv_button.pack(pady=0, fill="x")
 
     root.mainloop()
 
