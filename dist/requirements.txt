@@ -1,6 +1,0 @@
-numpy
-librosa
-soundfile
-pandas
-tkinter
-re
